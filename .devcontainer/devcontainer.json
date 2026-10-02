@@ -1,10 +1,10 @@
 {
-  "name": "plugin-template",
+  "name": "plugin-nifi",
   "build": {
     "context": ".",
     "dockerfile": "Dockerfile"
   },
-  "workspaceFolder": "/workspaces/plugin-template",
+  "workspaceFolder": "/workspaces/plugin-nifi",
   "forwardPorts": [8080],
   "customizations": {
     "vscode": {
