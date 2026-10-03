@@ -172,7 +172,7 @@ class NifiTest {
     @Test
     void testTrigger() throws Exception {
         Trigger trigger = Trigger.builder()
-            .id("nifi_trigger")
+            .id("nifi_trigger_" + io.kestra.core.utils.IdUtils.create())
             .type(Trigger.class.getName())
             .url(Property.ofValue(wireMockUrl))
             .username(Property.ofValue("admin"))
