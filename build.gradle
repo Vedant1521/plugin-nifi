@@ -57,6 +57,7 @@ dependencies {
  **********************************************************************************************************************/
 test {
     useJUnitPlatform()
+    jvmArgs "-XX:+TieredCompilation", "-XX:TieredStopAtLevel=1", "-Xss512k"
 }
 
 dependencies {
@@ -87,6 +88,7 @@ dependencies {
     testImplementation "org.junit.jupiter:junit-jupiter-engine"
     testImplementation "org.hamcrest:hamcrest"
     testImplementation "org.hamcrest:hamcrest-library"
+    testImplementation "org.wiremock:wiremock-jetty12"
 }
 
 /**********************************************************************************************************************\
