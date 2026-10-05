@@ -60,7 +60,7 @@ public class StopProcessGroup extends AbstractNifiConnection implements Runnable
         title = "The Process Group ID",
         description = "The unique identifier of the NiFi Process Group to stop. Can be a specific Process Group UUID or 'root' for the root group."
     )
-    @PluginProperty
+    @PluginProperty(group = "main")
     private Property<String> processGroupId;
 
     @Override

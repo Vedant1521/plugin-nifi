@@ -61,7 +61,7 @@ public class GetProcessGroupStatus extends AbstractNifiConnection implements Run
         title = "The Process Group ID",
         description = "The unique identifier of the NiFi Process Group to retrieve status for. Can be a specific Process Group UUID or 'root' for the root group."
     )
-    @PluginProperty
+    @PluginProperty(group = "main")
     private Property<String> processGroupId;
 
     @Override
@@ -84,8 +84,8 @@ public class GetProcessGroupStatus extends AbstractNifiConnection implements Run
             JsonNode rootNode = JacksonMapper.ofJson().readTree(response.getBody());
             JsonNode snapshot = rootNode.path("processGroupStatus").path("aggregateSnapshot");
 
-            Integer queuedCount = snapshot.hasNonNull("queuedCount") ? snapshot.get("queuedCount").asInt() : null;
-            Long queuedBytes = snapshot.hasNonNull("queuedBytes") ? snapshot.get("queuedBytes").asLong() : null;
+            Integer queuedCount = snapshot.hasNonNull("flowFilesQueued") ? snapshot.get("flowFilesQueued").asInt() : null;
+            Long queuedBytes = snapshot.hasNonNull("bytesQueued") ? snapshot.get("bytesQueued").asLong() : null;
             Integer activeThreadCount = snapshot.hasNonNull("activeThreadCount") ? snapshot.get("activeThreadCount").asInt() : null;
 
             runContext.logger().info("Process Group '{}' status: queuedCount={}, queuedBytes={}, activeThreadCount={}",

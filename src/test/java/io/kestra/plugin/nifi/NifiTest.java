@@ -70,8 +70,8 @@ class NifiTest {
                     {
                       "processGroupStatus": {
                         "aggregateSnapshot": {
-                          "queuedCount": 5,
-                          "queuedBytes": 1024,
+                          "flowFilesQueued": 5,
+                          "bytesQueued": 1024,
                           "activeThreadCount": 2
                         }
                       }
@@ -101,8 +101,15 @@ class NifiTest {
                         "bulletins": [
                           {
                             "id": 1,
-                            "level": "ERROR",
-                            "message": "NiFi mock error message"
+                            "groupId": "root",
+                            "sourceId": "processor-1",
+                            "canRead": true,
+                            "bulletin": {
+                              "id": 1,
+                              "level": "ERROR",
+                              "message": "NiFi mock error message",
+                              "sourceName": "LogMessage"
+                            }
                           }
                         ]
                       }
@@ -148,6 +155,10 @@ class NifiTest {
 
         assertThat(output, notNullValue());
         assertThat(output.getProcessGroupId(), is("root"));
+
+        wireMockServer.verify(putRequestedFor(urlEqualTo("/nifi-api/flow/process-groups/root"))
+            .withHeader("Authorization", equalTo("Bearer fake-jwt-token"))
+            .withRequestBody(matchingJsonPath("$.state", equalTo("RUNNING"))));
     }
 
     @Test
@@ -167,6 +178,10 @@ class NifiTest {
 
         assertThat(output, notNullValue());
         assertThat(output.getProcessGroupId(), is("root"));
+
+        wireMockServer.verify(putRequestedFor(urlEqualTo("/nifi-api/flow/process-groups/root"))
+            .withHeader("Authorization", equalTo("Bearer fake-jwt-token"))
+            .withRequestBody(matchingJsonPath("$.state", equalTo("STOPPED"))));
     }
 
     @Test
@@ -197,5 +212,84 @@ class NifiTest {
         assertThat(bulletins, notNullValue());
         assertThat(bulletins, hasSize(1));
         assertThat(bulletins.get(0).get("id"), is(1));
+    }
+
+    @Test
+    void testTriggerWatermarkAndRestart() throws Exception {
+        Trigger trigger = Trigger.builder()
+            .id("nifi_trigger_" + io.kestra.core.utils.IdUtils.create())
+            .type(Trigger.class.getName())
+            .url(Property.ofValue(wireMockUrl))
+            .username(Property.ofValue("admin"))
+            .password(Property.ofValue("password"))
+            .sslVerify(Property.ofValue(false))
+            .level(Property.ofValue("ERROR"))
+            .build();
+
+        var triggerEntry = TestsUtils.mockTrigger(runContextFactory, trigger);
+        ConditionContext conditionContext = triggerEntry.getKey();
+        TriggerContext triggerContext = triggerEntry.getValue();
+
+        // 1. First evaluation: bulletin id=1 present -> should trigger
+        Optional<Execution> firstEval = trigger.evaluate(conditionContext, triggerContext);
+        assertThat(firstEval.isPresent(), is(true));
+
+        // 2. Second evaluation with identical bulletin board -> should not trigger again
+        Optional<Execution> secondEval = trigger.evaluate(conditionContext, triggerContext);
+        assertThat(secondEval.isPresent(), is(false));
+
+        // 3. New bulletin id=2 arrives
+        wireMockServer.stubFor(get(urlEqualTo("/nifi-api/flow/bulletin-board"))
+            .willReturn(aResponse()
+                .withStatus(200)
+                .withHeader("Content-Type", "application/json")
+                .withBody("""
+                    {
+                      "bulletinBoard": {
+                        "bulletins": [
+                          {
+                            "id": 1,
+                            "bulletin": { "id": 1, "level": "ERROR", "message": "First error" }
+                          },
+                          {
+                            "id": 2,
+                            "bulletin": { "id": 2, "level": "ERROR", "message": "Second error" }
+                          }
+                        ]
+                      }
+                    }
+                    """)));
+
+        Optional<Execution> thirdEval = trigger.evaluate(conditionContext, triggerContext);
+        assertThat(thirdEval.isPresent(), is(true));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> bulletinsAfterNew = (List<Map<String, Object>>) thirdEval.get().getTrigger().getVariables().get("bulletins");
+        assertThat(bulletinsAfterNew, hasSize(1));
+        assertThat(bulletinsAfterNew.get(0).get("id"), is(2));
+
+        // 4. NiFi service restart: in-memory counter resets, highest bulletin id is 1 (< stored watermark 2)
+        wireMockServer.stubFor(get(urlEqualTo("/nifi-api/flow/bulletin-board"))
+            .willReturn(aResponse()
+                .withStatus(200)
+                .withHeader("Content-Type", "application/json")
+                .withBody("""
+                    {
+                      "bulletinBoard": {
+                        "bulletins": [
+                          {
+                            "id": 1,
+                            "bulletin": { "id": 1, "level": "ERROR", "message": "Error after restart" }
+                          }
+                        ]
+                      }
+                    }
+                    """)));
+
+        Optional<Execution> fourthEval = trigger.evaluate(conditionContext, triggerContext);
+        assertThat(fourthEval.isPresent(), is(true));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> bulletinsAfterRestart = (List<Map<String, Object>>) fourthEval.get().getTrigger().getVariables().get("bulletins");
+        assertThat(bulletinsAfterRestart, hasSize(1));
+        assertThat(bulletinsAfterRestart.get(0).get("id"), is(1));
     }
 }

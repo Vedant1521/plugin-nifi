@@ -39,14 +39,19 @@
 
 ## Why
 
-- What user problem does this solve? Teams need a concrete starting point for building and validating new Kestra plugins without recreating the same project scaffolding from scratch.
-- Why would a team adopt this plugin in a workflow? It gives plugin authors a ready-made reference repo they can adapt alongside their own build, test, and publishing workflow.
-- What operational/business outcome does it enable? It shortens plugin delivery time, reduces setup mistakes, and makes internal or partner plugin development more repeatable.
+- **What user problem does this solve?** Teams using Apache NiFi often need to orchestrate and automate data flow lifecycle events alongside broader data pipelines, such as stopping or starting Process Groups around maintenance windows or triggering recovery workflows when errors appear on the NiFi Bulletin Board.
+- **Why would a team adopt this plugin in a workflow?** It eliminates the need for bespoke custom API scripts to interact with NiFi, providing declarative, battle-tested tasks and triggers directly within Kestra.
+- **What operational/business outcome does it enable?** Enables seamless end-to-end data orchestration, automated incident response for NiFi flow errors, and unified visibility across NiFi process groups.
 
 ## What
 
 - Provides plugin components under `io.kestra.plugin.nifi`.
-- Includes classes such as `Example`, `Trigger`.
+- Tasks:
+  - `GetProcessGroupStatus`: Fetch aggregate metrics and status of a NiFi Process Group.
+  - `StartProcessGroup`: Start and schedule components in a NiFi Process Group to `RUNNING`.
+  - `StopProcessGroup`: Stop components in a NiFi Process Group to `STOPPED`.
+- Triggers:
+  - `Trigger`: Poll the NiFi Bulletin Board and trigger executions when new bulletins match a specified severity level.
 
 ## Running Kestra locally with this plugin
 

@@ -31,17 +31,19 @@ public abstract class AbstractNifiConnection extends Task implements NifiConnect
         title = "The Apache NiFi base URL",
         description = "The fully qualified URL pointing to your Apache NiFi cluster or instance (e.g., https://localhost:8443 or http://localhost:8080)."
     )
+    @PluginProperty(group = "connection")
     protected Property<String> url;
 
     @Schema(
         title = "The username for NiFi authentication"
     )
+    @PluginProperty(group = "connection")
     protected Property<String> username;
 
     @Schema(
         title = "The password for NiFi authentication"
     )
-    @PluginProperty(secret = true)
+    @PluginProperty(group = "connection", secret = true)
     @ToString.Exclude
     protected Property<String> password;
 
@@ -50,15 +52,8 @@ public abstract class AbstractNifiConnection extends Task implements NifiConnect
         description = "Set to false to disable SSL verification (e.g., for self-signed certificates)."
     )
     @Builder.Default
+    @PluginProperty(group = "connection")
     protected Property<Boolean> sslVerify = Property.ofValue(true);
-
-    @Schema(
-        title = "Client certificate for mutual TLS (mTLS) authentication",
-        description = "The client certificate content or certificate file path used for mutual TLS authentication."
-    )
-    @PluginProperty(secret = true)
-    @ToString.Exclude
-    protected Property<String> clientCertificate;
 
     /**
      * Initializes and returns Kestra's internal HTTP client configured with NiFi connection and SSL settings.

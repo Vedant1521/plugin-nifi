@@ -1,16 +1,15 @@
-This is the Kestra plugin template. Use it as a starting point for building a new plugin.
+This plugin provides tasks and triggers to interact with [Apache NiFi](https://nifi.apache.org/), enabling data orchestration workflows to monitor, start, stop, and trigger based on Apache NiFi components.
 
-## What this template ships
+## Tasks
 
-- `Example` is a sample `RunnableTask` that reverses an input string.
-- `Trigger` is a sample polling trigger that fires an execution at random.
+- `GetProcessGroupStatus`: Retrieves aggregate status metrics for a specified Process Group (or `root`), including queued FlowFiles count, queued bytes, and active thread count.
+- `StartProcessGroup`: Starts and schedules all components within a specified Process Group to `RUNNING` state.
+- `StopProcessGroup`: Stops all components within a specified Process Group to `STOPPED` state.
 
-## How to build your plugin
+## Triggers
 
-1. Rename the package `io.kestra.plugin.nifi` to your own, for example `io.kestra.plugin.myservice`.
-2. Update `group`, `name`, `title`, and `description` in `src/main/resources/metadata/index.yaml`.
-3. Replace `src/main/resources/icons/plugin-icon.svg` with your service's icon.
-4. Replace the `Example` and `Trigger` classes with your real tasks and triggers.
-5. Replace this how-to with documentation for your plugin.
+- `Trigger`: Periodically polls the Apache NiFi Bulletin Board and triggers workflow executions when new bulletins matching a configured severity level (such as `ERROR`, `WARN`, or `INFO`) are detected. Watermark tracking is maintained via Kestra's KV store.
 
-Run `./gradlew lintPluginDocs` before pushing to validate the plugin documentation.
+## Authentication
+
+Authentication is handled via Apache NiFi's REST API `/nifi-api/access/token` endpoint using username and password credentials to obtain a JWT Bearer token for subsequent requests. SSL certificate verification can be toggled using `sslVerify`.

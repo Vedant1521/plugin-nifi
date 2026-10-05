@@ -60,7 +60,7 @@ public class StartProcessGroup extends AbstractNifiConnection implements Runnabl
         title = "The Process Group ID",
         description = "The unique identifier of the NiFi Process Group to start. Can be a specific Process Group UUID or 'root' for the root group."
     )
-    @PluginProperty
+    @PluginProperty(group = "main")
     private Property<String> processGroupId;
 
     @Override

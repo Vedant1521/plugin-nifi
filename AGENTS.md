@@ -3,13 +3,13 @@
 ## What
 
 - Provides plugin components under `io.kestra.plugin.nifi`.
-- Includes classes such as `Example`, `Trigger`.
+- Includes classes such as `GetProcessGroupStatus`, `StartProcessGroup`, `StopProcessGroup`, `Trigger`.
 
 ## Why
 
-- What user problem does this solve? Teams need a concrete starting point for building and validating new Kestra plugins without recreating the same project scaffolding from scratch.
-- Why would a team adopt this plugin in a workflow? It gives plugin authors a ready-made reference repo they can adapt alongside their own build, test, and publishing workflow.
-- What operational/business outcome does it enable? It shortens plugin delivery time, reduces setup mistakes, and makes internal or partner plugin development more repeatable.
+- What user problem does this solve? Orchestrating data movement and lifecycle states across Apache NiFi Process Groups and reacting to Bulletin Board errors directly from Kestra workflows.
+- Why would a team adopt this plugin in a workflow? It enables native, declarative NiFi management without writing external shell scripts or manual HTTP calls.
+- What operational/business outcome does it enable? Reduces downtime, automates error detection and recovery in data pipelines, and integrates NiFi into the wider modern data stack.
 
 ## How
 
@@ -25,7 +25,10 @@ Infrastructure dependencies (Docker Compose services):
 
 ### Key Plugin Classes
 
-- `io.kestra.plugin.nifi.Example`
+- `io.kestra.plugin.nifi.GetProcessGroupStatus`
+- `io.kestra.plugin.nifi.StartProcessGroup`
+- `io.kestra.plugin.nifi.StopProcessGroup`
+- `io.kestra.plugin.nifi.Trigger`
 
 ### Project Structure
 

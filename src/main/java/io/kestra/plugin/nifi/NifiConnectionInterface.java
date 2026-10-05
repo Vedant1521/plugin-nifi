@@ -30,11 +30,4 @@ public interface NifiConnectionInterface {
         description = "Set to false to disable SSL verification (e.g., for self-signed certificates)."
     )
     Property<Boolean> getSslVerify();
-
-    @Schema(
-        title = "Client certificate for mutual TLS (mTLS) authentication",
-        description = "The client certificate content or certificate file path used for mutual TLS authentication."
-    )
-    @PluginProperty(secret = true)
-    Property<String> getClientCertificate();
 }

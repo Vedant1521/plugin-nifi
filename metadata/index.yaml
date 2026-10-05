@@ -1,3 +1,0 @@
-title: Apache NiFi
-description: Tasks and triggers to connect, manage, and monitor Apache NiFi workflows and process groups.
-group: io.kestra.plugin.nifi

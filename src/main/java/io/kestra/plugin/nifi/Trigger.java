@@ -17,7 +17,8 @@ import io.kestra.core.models.triggers.TriggerOutput;
 import io.kestra.core.models.triggers.TriggerService;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.JacksonMapper;
-import io.kestra.core.storages.StateStore;
+import io.kestra.core.storages.kv.KVStore;
+import io.kestra.core.storages.kv.KVValueAndMetadata;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.Builder;
@@ -27,9 +28,7 @@ import lombok.NoArgsConstructor;
 import lombok.ToString;
 import lombok.experimental.SuperBuilder;
 
-import java.io.InputStream;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -81,19 +80,19 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         title = "The Apache NiFi base URL",
         description = "The fully qualified URL pointing to your Apache NiFi cluster or instance (e.g., https://localhost:8443 or http://localhost:8080)."
     )
-    @PluginProperty
+    @PluginProperty(group = "connection")
     private Property<String> url;
 
     @Schema(
         title = "The username for NiFi authentication"
     )
-    @PluginProperty
+    @PluginProperty(group = "connection")
     private Property<String> username;
 
     @Schema(
         title = "The password for NiFi authentication"
     )
-    @PluginProperty(secret = true)
+    @PluginProperty(group = "connection", secret = true)
     @ToString.Exclude
     private Property<String> password;
 
@@ -102,23 +101,15 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         description = "Set to false to disable SSL verification (e.g., for self-signed certificates)."
     )
     @Builder.Default
-    @PluginProperty
+    @PluginProperty(group = "connection")
     private Property<Boolean> sslVerify = Property.ofValue(true);
-
-    @Schema(
-        title = "Client certificate for mutual TLS (mTLS) authentication",
-        description = "The client certificate content or certificate file path used for mutual TLS authentication."
-    )
-    @PluginProperty(secret = true)
-    @ToString.Exclude
-    private Property<String> clientCertificate;
 
     @Builder.Default
     @Schema(
         title = "Bulletin level to filter",
         description = "The bulletin level to filter on (e.g., ERROR, WARN, INFO). Defaults to 'ERROR'."
     )
-    @PluginProperty
+    @PluginProperty(group = "main")
     private Property<String> level = Property.ofValue("ERROR");
 
     @Builder.Default
@@ -126,10 +117,9 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         title = "Interval between polling checks",
         description = "The duration between each poll to the NiFi Bulletin Board. Defaults to 1 minute (PT1M)."
     )
-    @PluginProperty
+    @PluginProperty(group = "execution")
     private final Duration interval = Duration.ofMinutes(1);
 
-    @SuppressWarnings({"deprecation", "removal"})
     @Override
     public Optional<Execution> evaluate(ConditionContext conditionContext, TriggerContext context) throws Exception {
         RunContext runContext = conditionContext.getRunContext();
@@ -143,23 +133,15 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
             .method("GET")
             .build();
 
-        StateStore stateStore = runContext.stateStore();
         RunContext.FlowInfo flowInfo = runContext.flowInfo();
-        String stateKey = context.getTriggerId() + "_bulletin_watermark";
+        KVStore kv = runContext.namespaceKv(flowInfo.namespace());
+        String stateKey = "nifi_" + flowInfo.id() + "_" + context.getTriggerId() + "_bulletin_watermark";
 
-        Long currentWatermark = -1L;
-        try (InputStream is = stateStore.getState(true, flowInfo.tenantId(), flowInfo.namespace(), stateKey)) {
-            if (is != null) {
-                String val = new String(is.readAllBytes(), StandardCharsets.UTF_8).trim();
-                if (!val.isEmpty()) {
-                    currentWatermark = Long.parseLong(val);
-                }
-            }
-        } catch (Exception ignored) {
-            // State not initialized yet on first poll
-        }
+        long currentWatermark = kv.getValue(stateKey)
+            .map(v -> Long.parseLong(String.valueOf(v.value())))
+            .orElse(-1L);
 
-        Long maxId = currentWatermark;
+        long maxId = currentWatermark;
         List<Map<String, Object>> matchingBulletins = new ArrayList<>();
 
         try (HttpClient client = NifiService.createHttpClient(this, runContext, token)) {
@@ -171,10 +153,38 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
                 bulletinsNode = rootNode.path("bulletins");
             }
 
-            if (bulletinsNode.isArray()) {
+            if (bulletinsNode.isArray() && !bulletinsNode.isEmpty()) {
+                // NiFi bulletin IDs come from an in-memory AtomicLong that starts at 0 upon service restart.
+                // If the board has bulletins but the highest ID found is lower than our watermark,
+                // NiFi has restarted; reset currentWatermark to -1 to process new bulletins.
+                long boardMaxId = -1L;
                 for (JsonNode bulletinNode : bulletinsNode) {
-                    Long id = bulletinNode.path("id").asLong(-1L);
-                    String bulletinLevel = bulletinNode.path("level").asText("");
+                    long id = bulletinNode.path("id").asLong(-1L);
+                    if (id == -1L && bulletinNode.has("bulletin")) {
+                        id = bulletinNode.path("bulletin").path("id").asLong(-1L);
+                    }
+                    if (id > boardMaxId) {
+                        boardMaxId = id;
+                    }
+                }
+
+                if (currentWatermark != -1L && boardMaxId != -1L && boardMaxId < currentWatermark) {
+                    runContext.logger().info("NiFi restart detected (board max ID {} < stored watermark {}). Resetting bulletin watermark.",
+                        boardMaxId, currentWatermark);
+                    currentWatermark = -1L;
+                    maxId = -1L;
+                }
+
+                for (JsonNode bulletinNode : bulletinsNode) {
+                    long id = bulletinNode.path("id").asLong(-1L);
+                    if (id == -1L && bulletinNode.has("bulletin")) {
+                        id = bulletinNode.path("bulletin").path("id").asLong(-1L);
+                    }
+
+                    String bulletinLevel = bulletinNode.path("bulletin").path("level").asText("");
+                    if (bulletinLevel.isEmpty()) {
+                        bulletinLevel = bulletinNode.path("level").asText("");
+                    }
 
                     if (id > maxId) {
                         maxId = id;
@@ -188,13 +198,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         }
 
         if (maxId > currentWatermark) {
-            stateStore.putState(
-                true,
-                flowInfo.tenantId(),
-                flowInfo.namespace(),
-                stateKey,
-                String.valueOf(maxId).getBytes(StandardCharsets.UTF_8)
-            );
+            kv.put(stateKey, new KVValueAndMetadata(null, String.valueOf(maxId)));
         }
 
         if (matchingBulletins.isEmpty()) {
