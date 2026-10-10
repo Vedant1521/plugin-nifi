@@ -8,7 +8,7 @@ This plugin provides tasks and triggers to interact with [Apache NiFi](https://n
 
 ## Triggers
 
-- `Trigger`: Periodically polls the Apache NiFi Bulletin Board and triggers workflow executions when new bulletins matching a configured severity level (such as `ERROR`, `WARN`, or `INFO`) are detected. Watermark tracking is maintained via Kestra's KV store.
+- `Trigger`: Periodically polls the Apache NiFi Bulletin Board and triggers workflow executions when new bulletins matching a configured severity level (`DEBUG`, `INFO`, `WARNING`, or `ERROR`, with `WARN` accepted as an alias for `WARNING`) are detected. Watermark tracking is maintained via Kestra's KV store. Note that NiFi retains at most 5 bulletins per component for up to 5 minutes, so higher polling intervals may miss bulletins under heavy activity.
 
 ## Authentication
 

@@ -193,7 +193,7 @@ class NifiTest {
             .username(Property.ofValue("admin"))
             .password(Property.ofValue("password"))
             .sslVerify(Property.ofValue(false))
-            .level(Property.ofValue("ERROR"))
+            .level(Property.ofValue(Trigger.Level.ERROR))
             .build();
 
         var triggerEntry = TestsUtils.mockTrigger(runContextFactory, trigger);
@@ -223,7 +223,7 @@ class NifiTest {
             .username(Property.ofValue("admin"))
             .password(Property.ofValue("password"))
             .sslVerify(Property.ofValue(false))
-            .level(Property.ofValue("ERROR"))
+            .level(Property.ofValue(Trigger.Level.ERROR))
             .build();
 
         var triggerEntry = TestsUtils.mockTrigger(runContextFactory, trigger);
@@ -291,5 +291,97 @@ class NifiTest {
         List<Map<String, Object>> bulletinsAfterRestart = (List<Map<String, Object>>) fourthEval.get().getTrigger().getVariables().get("bulletins");
         assertThat(bulletinsAfterRestart, hasSize(1));
         assertThat(bulletinsAfterRestart.get(0).get("id"), is(1));
+    }
+
+    @Test
+    void testTriggerWithWarningAndWarnAlias() throws Exception {
+        wireMockServer.stubFor(get(urlEqualTo("/nifi-api/flow/bulletin-board"))
+            .willReturn(aResponse()
+                .withStatus(200)
+                .withHeader("Content-Type", "application/json")
+                .withBody("""
+                    {
+                      "bulletinBoard": {
+                        "bulletins": [
+                          {
+                            "id": 10,
+                            "groupId": "root",
+                            "sourceId": "processor-warn",
+                            "canRead": true,
+                            "bulletin": {
+                              "id": 10,
+                              "level": "WARNING",
+                              "message": "NiFi mock warning message",
+                              "sourceName": "LogMessage"
+                            }
+                          }
+                        ]
+                      }
+                    }
+                    """)));
+
+        // 1. Evaluate with level: WARNING -> matches NiFi's WARNING bulletin
+        Trigger warningTrigger = Trigger.builder()
+            .id("nifi_trigger_" + io.kestra.core.utils.IdUtils.create())
+            .type(Trigger.class.getName())
+            .url(Property.ofValue(wireMockUrl))
+            .username(Property.ofValue("admin"))
+            .password(Property.ofValue("password"))
+            .sslVerify(Property.ofValue(false))
+            .level(Property.ofValue(Trigger.Level.WARNING))
+            .build();
+
+        var warningEntry = TestsUtils.mockTrigger(runContextFactory, warningTrigger);
+        ConditionContext warningCondCtx = warningEntry.getKey();
+        TriggerContext warningTrigCtx = warningEntry.getValue();
+
+        Optional<Execution> warningEval = warningTrigger.evaluate(warningCondCtx, warningTrigCtx);
+        assertThat(warningEval.isPresent(), is(true));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> warningBulletins = (List<Map<String, Object>>) warningEval.get().getTrigger().getVariables().get("bulletins");
+        assertThat(warningBulletins, hasSize(1));
+        assertThat(warningBulletins.get(0).get("id"), is(10));
+
+        // Verify watermark key format with length-prefix
+        RunContext.FlowInfo flowInfo = warningCondCtx.getRunContext().flowInfo();
+        String expectedStateKey = "nifi_watermark_" + flowInfo.id().length() + "_" + flowInfo.id() + "_" + warningTrigCtx.getTriggerId();
+        var kv = warningCondCtx.getRunContext().namespaceKv(flowInfo.namespace());
+        assertThat(kv.getValue(expectedStateKey).isPresent(), is(true));
+        assertThat(kv.getValue(expectedStateKey).get().value(), is("10"));
+
+        // 2. Evaluate with level: WARN (alias parsed via fromString) -> also matches WARNING bulletin
+        Trigger warnAliasTrigger = Trigger.builder()
+            .id("nifi_trigger_" + io.kestra.core.utils.IdUtils.create())
+            .type(Trigger.class.getName())
+            .url(Property.ofValue(wireMockUrl))
+            .username(Property.ofValue("admin"))
+            .password(Property.ofValue("password"))
+            .sslVerify(Property.ofValue(false))
+            .level(Property.ofValue(Trigger.Level.fromString("WARN")))
+            .build();
+
+        var warnAliasEntry = TestsUtils.mockTrigger(runContextFactory, warnAliasTrigger);
+        Optional<Execution> warnAliasEval = warnAliasTrigger.evaluate(warnAliasEntry.getKey(), warnAliasEntry.getValue());
+        assertThat(warnAliasEval.isPresent(), is(true));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> warnBulletins = (List<Map<String, Object>>) warnAliasEval.get().getTrigger().getVariables().get("bulletins");
+        assertThat(warnBulletins, hasSize(1));
+        assertThat(warnBulletins.get(0).get("id"), is(10));
+
+        // 3. Evaluate with level: ERROR on same bulletin board -> does NOT match WARNING bulletin
+        Trigger errorTrigger = Trigger.builder()
+            .id("nifi_trigger_" + io.kestra.core.utils.IdUtils.create())
+            .type(Trigger.class.getName())
+            .url(Property.ofValue(wireMockUrl))
+            .username(Property.ofValue("admin"))
+            .password(Property.ofValue("password"))
+            .sslVerify(Property.ofValue(false))
+            .level(Property.ofValue(Trigger.Level.ERROR))
+            .build();
+
+        var errorEntry = TestsUtils.mockTrigger(runContextFactory, errorTrigger);
+        Optional<Execution> errorEval = errorTrigger.evaluate(errorEntry.getKey(), errorEntry.getValue());
+        assertThat(errorEval.isPresent(), is(false));
     }
 }

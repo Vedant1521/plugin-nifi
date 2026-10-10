@@ -1,5 +1,7 @@
 package io.kestra.plugin.nifi;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.kestra.core.http.HttpRequest;
 import io.kestra.core.http.HttpResponse;
@@ -107,15 +109,15 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     @Builder.Default
     @Schema(
         title = "Bulletin level to filter",
-        description = "The bulletin level to filter on (e.g., ERROR, WARN, INFO). Defaults to 'ERROR'."
+        description = "The bulletin level to filter on: DEBUG, INFO, WARNING, or ERROR. WARN is accepted as an alias for WARNING. Defaults to 'ERROR'."
     )
     @PluginProperty(group = "main")
-    private Property<String> level = Property.ofValue("ERROR");
+    private Property<Level> level = Property.ofValue(Level.ERROR);
 
     @Builder.Default
     @Schema(
         title = "Interval between polling checks",
-        description = "The duration between each poll to the NiFi Bulletin Board. Defaults to 1 minute (PT1M)."
+        description = "The duration between each poll to the NiFi Bulletin Board. Defaults to 1 minute (PT1M). Note that NiFi retains at most 5 bulletins per component for up to 5 minutes, so higher polling intervals may miss bulletins under heavy activity."
     )
     @PluginProperty(group = "execution")
     private final Duration interval = Duration.ofMinutes(1);
@@ -125,7 +127,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         RunContext runContext = conditionContext.getRunContext();
         String token = NifiService.authenticate(this, runContext);
 
-        String targetLevel = runContext.render(this.level).as(String.class).orElse("ERROR");
+        Level targetLevel = runContext.render(this.level).as(Level.class).orElse(Level.ERROR);
         URI bulletinUri = NifiService.resolveUri(this, runContext, "/flow/bulletin-board");
 
         HttpRequest request = HttpRequest.builder()
@@ -135,7 +137,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
         RunContext.FlowInfo flowInfo = runContext.flowInfo();
         KVStore kv = runContext.namespaceKv(flowInfo.namespace());
-        String stateKey = "nifi_" + flowInfo.id() + "_" + context.getTriggerId() + "_bulletin_watermark";
+        String stateKey = "nifi_watermark_" + flowInfo.id().length() + "_" + flowInfo.id() + "_" + context.getTriggerId();
 
         long currentWatermark = kv.getValue(stateKey)
             .map(v -> Long.parseLong(String.valueOf(v.value())))
@@ -190,7 +192,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
                         maxId = id;
                     }
 
-                    if (id > currentWatermark && targetLevel.equalsIgnoreCase(bulletinLevel)) {
+                    if (id > currentWatermark && targetLevel.name().equalsIgnoreCase(normalizeLevel(bulletinLevel))) {
                         matchingBulletins.add(JacksonMapper.toMap(bulletinNode));
                     }
                 }
@@ -205,7 +207,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
             return Optional.empty();
         }
 
-        runContext.logger().info("Found {} new NiFi bulletins matching level '{}'", matchingBulletins.size(), targetLevel);
+        runContext.logger().info("Found {} new NiFi bulletins matching level '{}'", matchingBulletins.size(), targetLevel.name());
 
         Output output = Output.builder()
             .bulletins(matchingBulletins)
@@ -219,6 +221,36 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         );
 
         return Optional.of(execution);
+    }
+
+    private static String normalizeLevel(String level) {
+        if (level == null) {
+            return "";
+        }
+        String trimmed = level.trim();
+        if ("WARN".equalsIgnoreCase(trimmed)) {
+            return "WARNING";
+        }
+        return trimmed.toUpperCase();
+    }
+
+    public enum Level {
+        DEBUG,
+        INFO,
+        @JsonAlias("WARN")
+        WARNING,
+        ERROR;
+
+        @JsonCreator
+        public static Level fromString(String value) {
+            if (value == null) {
+                return null;
+            }
+            if ("WARN".equalsIgnoreCase(value.trim())) {
+                return WARNING;
+            }
+            return Level.valueOf(value.trim().toUpperCase());
+        }
     }
 
     /**
